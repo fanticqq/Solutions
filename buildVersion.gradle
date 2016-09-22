@@ -1,0 +1,94 @@
+/*
+*Solutoin for getting application build version info 
+*/
+
+allprojects {
+    repositories {
+        jcenter()
+    }
+}
+
+/**
+ * Removes release build type from output file name.
+ * @return Output file name without build type.
+ */
+def removeAllVariantsBuildType() {
+    android.applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            output.outputFile = new File(output.outputFile.parent, output.outputFile.name.replace("-release", ""))
+        }
+    }
+}
+
+/**
+ * Gets build version code of project based on commits count of whole repository.
+ * @return Number of commits in current git branch.
+ */
+def getGitRevision() {
+    def command = "git rev-list HEAD --count" //we issue this command to build on bamboo
+    println sprintf(command)
+    def process = command.execute()
+    process.waitFor()
+
+    String gitCountString = process.text.trim();
+    if (gitCountString.isEmpty()) { //if we build locally we need this command
+        command = "git --git-dir=$projectDir.absoluteFile.parent/.git --work-tree=$projectDir.absolutePath rev-list remotes/origin/master --count"
+        println sprintf(command)
+        process = command.execute()
+        process.waitFor()
+        gitCountString = process.text.trim();
+    }
+
+    def gitCount = gitCountString.toInteger() + 12000
+    // Increase versoin for GooglePlay
+    gitCount = gitCount + 1000
+    return gitCount
+}
+
+def getGitBranch() {
+    def command = "git rev-parse --abbrev-ref HEAD" //we issue this command to build on bamboo
+    def process = command.execute()
+    process.waitFor()
+    def currentBranch = process.text.trim()
+    if (currentBranch.isEmpty()) { //if we build locally we need this command
+        command = "git --git-dir=$projectDir.absoluteFile.parent/.git --work-tree=$projectDir.absolutePath rev-parse --abbrev-ref HEAD"
+        process = command.execute()
+        process.waitFor()
+        currentBranch = process.text.trim();
+    }
+    return currentBranch
+}
+
+def getGitCommit() {
+    def command = "git log -1 --pretty=format:%h"
+    def process = command.execute()
+    process.waitFor()
+    def lastCommit = process.text.trim()
+    if (lastCommit.isEmpty()) { //if we build locally we need this command
+        command = "git --git-dir=$projectDir.absoluteFile.parent/.git --work-tree=$projectDir.absolutePath log -1 --pretty=format:%h"
+        process = command.execute()
+        process.waitFor()
+        lastCommit = process.text.trim();
+    }
+    return lastCommit
+}
+
+/**
+ * Composes build version name with given version name and code.
+ * @param versionName Version name to compose with.
+ * @param versionCode Version code to compose with.
+ * @return The build version name with given version name and code.
+ */
+def composeVersionName(String versionName, int versionCode) {
+    def currentBranch = getGitBranch()
+    def lastCommit = getGitCommit()
+    println sprintf("%s: building version %s", project.name , versionName + "." + versionCode + "-" + lastCommit + "_" + currentBranch)
+    return versionName + "." + versionCode + "-" + lastCommit + "_" + currentBranch;
+}
+
+
+ext {
+    cleanBuildType = this.&removeAllVariantsBuildType
+    getVersionName = this.&composeVersionName
+    getVersionCode = this.&getGitRevision
+}
